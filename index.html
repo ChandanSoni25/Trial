@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Matrix To-Do</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 90%; max-width: 800px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { padding: 10px 20px; cursor: pointer; border: none; background: #ddd; border-radius: 5px; }
+        .tab-btn.active { background: #007bff; color: white; }
+        .content { display: none; }
+        .content.active { display: block; }
+        #drop-zone { border: 2px dashed #007bff; padding: 20px; text-align: center; color: #555; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        select { padding: 5px; border-radius: 4px; }
+        .chart-container { width: 100%; height: 400px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Matrix Task Manager</h2>
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('list-tab')">Task List</button>
+        <button class="tab-btn" onclick="showTab('chart-tab')">Analytics Chart</button>
+    </div>
+
+    <div id="list-tab" class="content active">
+        <div id="drop-zone">Click here and <strong>Paste (Ctrl+V)</strong> your Excel column or Image</div>
+        <table id="task-table">
+            <thead>
+                <tr>
+                    <th>Task</th>
+                    <th>Priority Category</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="task-body"></tbody>
+        </table>
+    </div>
+
+    <div id="chart-tab" class="content">
+        <div class="chart-container">
+            <canvas id="priorityChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let tasks = [];
+    let myChart = null;
+
+    // Handle Pasting
+    document.addEventListener('paste', async (e) => {
+        const items = e.clipboardData.items;
+        
+        for (let item of items) {
+            // Handle Images
+            if (item.type.indexOf("image") !== -1) {
+                const blob = item.getAsFile();
+                document.getElementById('drop-zone').innerText = "Processing image...";
+                const result = await Tesseract.recognize(blob, 'eng');
+                processText(result.data.text);
+            } 
+            // Handle Text/Excel
+            else if (item.type === "text/plain") {
+                item.getAsString((text) => processText(text));
+            }
+        }
+    });
+
+    function processText(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+        lines.forEach(line => {
+            addTask(line.trim());
+        });
+        document.getElementById('drop-zone').innerText = "Input Received! Paste more or organize below.";
+    }
+
+    function addTask(taskText) {
+        const task = { id: Date.now() + Math.random(), text: taskText, category: "Not Urgent Not Important" };
+        tasks.push(task);
+        renderTasks();
+        updateChart();
+    }
+
+    function renderTasks() {
+        const tbody = document.getElementById('task-body');
+        tbody.innerHTML = '';
+        tasks.forEach(task => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${task.text}</td>
+                <td>
+                    <select onchange="updateTaskCategory(${task.id}, this.value)">
+                        <option ${task.category === 'Urgent Important' ? 'selected' : ''}>Urgent Important</option>
+                        <option ${task.category === 'Not Urgent Important' ? 'selected' : ''}>Not Urgent Important</option>
+                        <option ${task.category === 'Urgent Not Important' ? 'selected' : ''}>Urgent Not Important</option>
+                        <option ${task.category === 'Not Urgent Not Important' ? 'selected' : ''}>Not Urgent Not Important</option>
+                    </select>
+                </td>
+                <td><button onclick="deleteTask(${task.id})">Delete</button></td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function updateTaskCategory(id, value) {
+        const task = tasks.find(t => t.id === id);
+        if (task) task.category = value;
+        updateChart();
+    }
+
+    function deleteTask(id) {
+        tasks = tasks.filter(t => t.id !== id);
+        renderTasks();
+        updateChart();
+    }
+
+    function showTab(tabId) {
+        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        event.currentTarget.classList.add('active');
+        if(tabId === 'chart-tab') updateChart();
+    }
+
+    function updateChart() {
+        const counts = {
+            "Urgent Important": 0,
+            "Not Urgent Important": 0,
+            "Urgent Not Important": 0,
+            "Not Urgent Not Important": 0
+        };
+        tasks.forEach(t => counts[t.category]++);
+
+        const ctx = document.getElementById('priorityChart').getContext('2d');
+        if (myChart) myChart.destroy();
+        
+        myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(counts),
+                datasets: [{
+                    label: '# of Tasks',
+                    data: Object.values(counts),
+                    backgroundColor: ['#ff4d4d', '#ffcc00', '#3399ff', '#cccccc']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
